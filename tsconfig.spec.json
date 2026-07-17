@@ -3,13 +3,24 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/spec",
+    "outDir": "./out-tsc/app",
+    "rootDir": "src",
     "types": [
       "vitest/globals"
     ]
   },
   "include": [
-    "src/**/*.d.ts",
+    "src/**/*.ts"
+  ],
+  "exclude": [
     "src/**/*.spec.ts"
-  ]
+  ],
+    "angularCompilerOptions": {
+    "extendedDiagnostics": {
+      "checks": {
+        "nullishCoalescingNotNullable": "suppress",
+        "optionalChainNotNullable": "suppress"
+      }
+    }
+  }
 }
