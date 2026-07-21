@@ -1,0 +1,123 @@
+<app-page-header
+  title="Colaboradores"
+  subtitle="Dados sincronizados do RH (Senior) — somente leitura. Colaboradores sem usuário no Cadastro Único ainda não conseguem receber credenciais."
+>
+  <div style="width: 300px;">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        class="form-control"
+        placeholder="Buscar por nome ou matrícula"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+  </div>
+</app-page-header>
+
+<div class="section-note">
+  <i class="bi bi-info-circle"></i>
+  <span>Estes dados vêm do sistema de RH e são substituídos na próxima sincronização — edite-os por lá, não aqui.</span>
+</div>
+
+@if (loading()) {
+  <app-loading-block label="Carregando colaboradores…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Matrícula</th>
+            <th>Empresa</th>
+            <th>Departamento</th>
+            <th>Cargo</th>
+            <th>Centro de custo</th>
+            <th>Admissão</th>
+            <th>Conta</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (employee of visibleRows(); track employee.id) {
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="avatar-chip">{{ (employee.personName ?? '?').charAt(0).toUpperCase() }}</span>
+                  <span class="fw-semibold">{{ employee.personName }}</span>
+                </div>
+              </td>
+              <td>{{ employee.registerNumber }}</td>
+              <td>{{ employerName(employee.employerId) }}</td>
+              <td>{{ departmentName(employee.departmentId) }}</td>
+              <td>{{ jobPositionName(employee.jobPositionId) }}</td>
+              <td>{{ costCenterName(employee.costCenterId) }}</td>
+              <td>{{ employee.hireDate | date: 'dd/MM/yyyy' }}</td>
+              <td>
+                @if (hasUser(employee)) {
+                  <span class="badge bg-success"><i class="bi bi-check-circle"></i> Tem usuário</span>
+                } @else {
+                  <span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> Sem acesso</span>
+                }
+              </td>
+              <td class="text-end">
+                @if (!hasUser(employee) && auth.can('ADMIN')) {
+                  <button class="btn btn-sm btn-outline-primary" (click)="openCreateUser(employee)">
+                    <i class="bi bi-person-plus"></i> Criar usuário
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+
+          @if (visibleRows().length === 0) {
+            <tr>
+              <td colspan="9">
+                <app-empty-state icon="bi-person-badge" message="Nenhum colaborador encontrado." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="totalFiltered()" (pageChange)="goToPage($event)" />
+}
+
+@if (creatingUserFor(); as employee) {
+  <div class="modal-backdrop-custom" (click)="creatingUserFor.set(null)"></div>
+  <div class="modal d-block" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Criar usuário para {{ employee.personName }}</h5>
+          <button type="button" class="btn-close" (click)="creatingUserFor.set(null)" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Usuário (login)</label>
+            <input class="form-control" [(ngModel)]="userForm.username" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">E-mail</label>
+            <input class="form-control" type="email" [(ngModel)]="userForm.email" />
+          </div>
+          <p class="text-muted small mb-0">
+            Depois de criado, conceda acesso a um sistema em Usuários → Detalhes → Novo acesso.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" (click)="creatingUserFor.set(null)">Cancelar</button>
+          <button type="button" class="btn btn-primary" [disabled]="savingUser()" (click)="saveUser()">
+            @if (savingUser()) {
+              <span class="spinner-border spinner-border-sm me-1"></span>
+            }
+            Criar usuário
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}

@@ -1,0 +1,55 @@
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="auth-brand-icon"><i class="bi bi-fingerprint"></i></span>
+      <h1>Cadastro Único</h1>
+      <p>Gestão central de usuários, credenciais e sistemas</p>
+    </div>
+
+    <form (ngSubmit)="submit()">
+      <div class="mb-3">
+        <label class="form-label">Usuário, e-mail ou matrícula</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-person"></i></span>
+          <input
+            class="form-control"
+            name="identifier"
+            [(ngModel)]="identifier"
+            required
+            autofocus
+            autocomplete="username"
+          />
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Senha</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-lock"></i></span>
+          <input
+            class="form-control"
+            type="password"
+            name="password"
+            [(ngModel)]="password"
+            required
+            autocomplete="current-password"
+          />
+        </div>
+      </div>
+
+      @if (error()) {
+        <div class="alert alert-danger py-2 d-flex align-items-center gap-2">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <span>{{ error() }}</span>
+        </div>
+      }
+
+      <button class="btn btn-primary w-100" type="submit" [disabled]="loading()">
+        @if (loading()) {
+          <span class="spinner-border spinner-border-sm me-2"></span>
+        }
+        {{ loading() ? 'Entrando…' : 'Entrar' }}
+      </button>
+    </form>
+  </div>
+</div>

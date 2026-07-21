@@ -1,0 +1,81 @@
+<app-page-header title="Locais" subtitle="Matriz, filiais e outros locais que podem ser vinculados a uma credencial.">
+  @if (auth.can('ADMIN')) {
+    <button class="btn btn-primary btn-sm" (click)="openForm()"><i class="bi bi-plus-lg"></i> Novo local</button>
+  }
+</app-page-header>
+
+@if (showForm()) {
+  <div class="card p-3 mb-3">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label">Empresa</label>
+        <select class="form-select" [(ngModel)]="form.employerId">
+          @for (e of employers(); track e.id) {
+            <option [value]="e.id">{{ e.tradingName ?? e.id }}</option>
+          }
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Nome</label>
+        <input class="form-control" [(ngModel)]="form.nome" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Descrição</label>
+        <input class="form-control" [(ngModel)]="form.descricao" />
+      </div>
+      <div class="col-md-2 d-flex align-items-end gap-1">
+        <button class="btn btn-success w-100" [disabled]="saving()" (click)="save()">Salvar</button>
+        <button class="btn btn-outline-secondary" (click)="showForm.set(false)"><i class="bi bi-x-lg"></i></button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (loading()) {
+  <app-loading-block label="Carregando locais…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Empresa</th>
+            <th>Nome</th>
+            <th>Descrição</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (location of locations(); track location.id) {
+            <tr>
+              <td>{{ employerName(location.employerId) }}</td>
+              <td><span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-geo-alt-fill"></i> {{ location.nome }}</span></td>
+              <td>{{ location.descricao }}</td>
+              <td>
+                <span class="badge" [class.bg-success]="location.status === 1" [class.bg-secondary]="location.status !== 1">
+                  {{ location.status === 1 ? 'Ativo' : 'Inativo' }}
+                </span>
+              </td>
+              <td class="text-end">
+                @if (auth.can('ADMIN')) {
+                  <button class="btn btn-sm btn-outline-danger" (click)="remove(location)">
+                    <i class="bi bi-trash"></i> Remover
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+
+          @if (locations().length === 0) {
+            <tr>
+              <td colspan="5">
+                <app-empty-state icon="bi-geo-alt" message="Nenhum local cadastrado ainda." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+}

@@ -1,0 +1,64 @@
+<app-page-header
+  title="Sessões"
+  subtitle="Refresh tokens ativos por credencial. Revogue para forçar um novo login em todos os dispositivos daquela credencial."
+/>
+
+@if (loading()) {
+  <app-loading-block label="Carregando sessões…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Usuário</th>
+            <th>Sistema</th>
+            <th>Criada em</th>
+            <th>Expira em</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (session of sessions(); track session.id) {
+            <tr>
+              <td>{{ session.userNome }}</td>
+              <td><i class="bi bi-hdd-network me-1 text-muted"></i>{{ session.systemNome }}</td>
+              <td>{{ session.dataCriacao | date: 'dd/MM/yy HH:mm' }}</td>
+              <td>{{ session.expira | date: 'dd/MM/yy HH:mm' }}</td>
+              <td>
+                @if (session.revogado) {
+                  <span class="badge bg-secondary"><i class="bi bi-slash-circle"></i> Revogada</span>
+                } @else if (isExpired(session)) {
+                  <span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Expirada</span>
+                } @else {
+                  <span class="badge bg-success"><i class="bi bi-check-circle"></i> Ativa</span>
+                }
+              </td>
+              <td class="text-end">
+                @if (!session.revogado && auth.can('ADMIN', 'UPDATE')) {
+                  <button class="btn btn-sm btn-outline-secondary me-1" (click)="revoke(session)">
+                    <i class="bi bi-slash-circle"></i> Revogar
+                  </button>
+                }
+                @if (auth.can('ADMIN', 'DELETE')) {
+                  <button class="btn btn-sm btn-outline-danger" (click)="remove(session)"><i class="bi bi-trash"></i></button>
+                }
+              </td>
+            </tr>
+          }
+
+          @if (sessions().length === 0) {
+            <tr>
+              <td colspan="6">
+                <app-empty-state icon="bi-clock-history" message="Nenhuma sessão registrada." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="total()" (pageChange)="goToPage($event)" />
+}

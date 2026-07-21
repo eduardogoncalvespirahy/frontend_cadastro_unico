@@ -1,0 +1,16 @@
+<div class="toast-stack" aria-live="polite" aria-atomic="true">
+  @for (toast of toastService.toasts(); track toast.id) {
+    <div class="app-toast" [class]="'app-toast-' + toast.kind" role="alert">
+      <i class="bi" [class]="iconFor(toast.kind)"></i>
+      <div class="app-toast-body">
+        <strong>{{ toast.title }}</strong>
+        @if (toast.message) {
+          <div class="app-toast-message">{{ toast.message }}</div>
+        }
+      </div>
+      <button type="button" class="app-toast-close" (click)="toastService.dismiss(toast.id)" aria-label="Fechar">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+  }
+</div>

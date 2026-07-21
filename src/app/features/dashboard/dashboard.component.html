@@ -1,0 +1,112 @@
+<div class="page-header">
+  <div>
+    <h4 class="page-title">Olá, {{ auth.displayName() }} 👋</h4>
+    <p class="page-subtitle">Visão geral do Cadastro Único — usuários, credenciais, sistemas e sincronizações.</p>
+  </div>
+</div>
+
+@if (!auth.isAdmin()) {
+  <div class="section-note">
+    <i class="bi bi-shield-lock"></i>
+    <span>
+      Sua credencial tem o(s) papel(is) <strong>{{ auth.roles().join(', ') }}</strong>. Algumas ações de
+      criação/edição podem estar ocultas ou bloqueadas pela API.
+    </span>
+  </div>
+}
+
+@if (loading()) {
+  <app-loading-block label="Carregando indicadores…" />
+} @else if (kpis(); as k) {
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-icon text-primary bg-primary-subtle"><i class="bi bi-people-fill"></i></div>
+      <div>
+        <div class="kpi-value">{{ k.users }}</div>
+        <div class="kpi-label">Usuários ativos</div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon text-info bg-info-subtle"><i class="bi bi-hdd-network-fill"></i></div>
+      <div>
+        <div class="kpi-value">{{ k.systems }}</div>
+        <div class="kpi-label">Sistemas cadastrados</div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon text-warning bg-warning-subtle"><i class="bi bi-key-fill"></i></div>
+      <div>
+        <div class="kpi-value">{{ k.credentials }}</div>
+        <div class="kpi-label">Credenciais emitidas</div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon text-success bg-success-subtle"><i class="bi bi-clock-history"></i></div>
+      <div>
+        <div class="kpi-value">{{ k.activeSessions }}</div>
+        <div class="kpi-label">Sessões ativas (amostra)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="dashboard-card h-100">
+        <div class="dashboard-card-title">
+          <span><i class="bi bi-arrow-repeat me-1"></i> Última sincronização de RH</span>
+          <a routerLink="/sincronizacoes" class="btn btn-sm btn-outline-secondary">Ver histórico</a>
+        </div>
+
+        @if (lastSyncError()) {
+          <app-empty-state icon="bi-exclamation-triangle" message="Não foi possível carregar o histórico de sincronização." />
+        } @else if (lastSync(); as sync) {
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge" [class.bg-success]="sync.success" [class.bg-danger]="!sync.success">
+              <i class="bi" [class.bi-check-circle]="sync.success" [class.bi-x-circle]="!sync.success"></i>
+              {{ sync.success ? 'Concluída com sucesso' : 'Falhou' }}
+            </span>
+            <span class="text-muted small">{{ sync.finishedAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+          </div>
+
+          <div class="row g-3 text-center">
+            <div class="col-3">
+              <div class="kpi-value fs-5">{{ sync.inserted }}</div>
+              <div class="kpi-label">Inseridos</div>
+            </div>
+            <div class="col-3">
+              <div class="kpi-value fs-5">{{ sync.updated }}</div>
+              <div class="kpi-label">Atualizados</div>
+            </div>
+            <div class="col-3">
+              <div class="kpi-value fs-5">{{ sync.removed }}</div>
+              <div class="kpi-label">Removidos</div>
+            </div>
+            <div class="col-3">
+              <div class="kpi-value fs-5">{{ (sync.durationMs / 1000).toFixed(1) }}s</div>
+              <div class="kpi-label">Duração</div>
+            </div>
+          </div>
+
+          @if (sync.error) {
+            <div class="alert alert-warning mt-3 mb-0 py-2 small">{{ sync.error }}</div>
+          }
+        } @else {
+          <app-empty-state icon="bi-arrow-repeat" message="Nenhuma sincronização registrada ainda." />
+        }
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="dashboard-card h-100">
+        <div class="dashboard-card-title"><span><i class="bi bi-lightning-charge me-1"></i> Acesso rápido</span></div>
+        <div class="d-flex flex-column gap-2">
+          <a routerLink="/usuarios" class="quick-link"><i class="bi bi-people"></i> Usuários</a>
+          <a routerLink="/credenciais" class="quick-link"><i class="bi bi-key"></i> Credenciais</a>
+          <a routerLink="/sistemas" class="quick-link"><i class="bi bi-hdd-network"></i> Sistemas e papéis</a>
+          <a routerLink="/locais" class="quick-link"><i class="bi bi-geo-alt"></i> Locais</a>
+          <a routerLink="/sessoes" class="quick-link"><i class="bi bi-clock-history"></i> Sessões</a>
+        </div>
+      </div>
+    </div>
+  </div>
+}

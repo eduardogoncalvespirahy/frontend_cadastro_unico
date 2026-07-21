@@ -1,0 +1,96 @@
+<app-page-header
+  title="Sistemas"
+  subtitle="Sistemas cadastrados que podem receber credenciais e papéis. Clique num sistema para ver e gerenciar os papéis dele."
+>
+  @if (auth.can('ADMIN')) {
+    <button class="btn btn-primary btn-sm" (click)="openForm()"><i class="bi bi-plus-lg"></i> Novo sistema</button>
+  }
+</app-page-header>
+
+@if (showForm()) {
+  <div class="card p-3 mb-3">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label">Nome</label>
+        <input class="form-control" [(ngModel)]="form.nome" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Descrição</label>
+        <input class="form-control" [(ngModel)]="form.descricao" />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">URL</label>
+        <input class="form-control" [(ngModel)]="form.url" placeholder="https://…" />
+      </div>
+      <div class="col-md-2 d-flex align-items-end gap-1">
+        <button class="btn btn-success w-100" [disabled]="saving()" (click)="save()">Salvar</button>
+        <button class="btn btn-outline-secondary" (click)="showForm.set(false)"><i class="bi bi-x-lg"></i></button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (loading()) {
+  <app-loading-block label="Carregando sistemas…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Descrição</th>
+            <th>URL</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (system of systems(); track system.id) {
+            <tr class="cursor-pointer" (click)="toggleExpand(system.id)">
+              <td>
+                <i class="bi me-2" [class.bi-chevron-right]="expandedSystemId() !== system.id" [class.bi-chevron-down]="expandedSystemId() === system.id"></i>
+                <i class="bi bi-hdd-network me-1 text-muted"></i>{{ system.nome }}
+              </td>
+              <td>{{ system.descricao }}</td>
+              <td>
+                @if (system.url) {
+                  <a [href]="system.url" target="_blank" rel="noopener" (click)="$event.stopPropagation()">{{ system.url }}</a>
+                }
+              </td>
+              <td>
+                <span class="badge" [class.bg-success]="system.status === 1" [class.bg-secondary]="system.status !== 1">
+                  {{ system.status === 1 ? 'Ativo' : 'Inativo' }}
+                </span>
+              </td>
+              <td (click)="$event.stopPropagation()" class="text-end">
+                @if (auth.can('ADMIN')) {
+                  <button class="btn btn-sm btn-outline-secondary me-1" (click)="toggleStatus(system)">
+                    {{ system.status === 1 ? 'Desativar' : 'Ativar' }}
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger" (click)="remove(system)"><i class="bi bi-trash"></i></button>
+                }
+              </td>
+            </tr>
+
+            @if (expandedSystemId() === system.id) {
+              <tr>
+                <td colspan="5" class="bg-light">
+                  <app-system-roles-panel [systemId]="system.id" />
+                </td>
+              </tr>
+            }
+          }
+
+          @if (systems().length === 0) {
+            <tr>
+              <td colspan="5">
+                <app-empty-state icon="bi-hdd-network" message="Nenhum sistema cadastrado ainda." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+}

@@ -1,0 +1,68 @@
+<app-page-header
+  title="Sincronizações"
+  subtitle="Histórico dos jobs de sincronização com o sistema de RH (Senior) — somente leitura."
+/>
+
+@if (loading()) {
+  <app-loading-block label="Carregando histórico…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Início</th>
+            <th>Fim</th>
+            <th>Duração</th>
+            <th>Inseridos</th>
+            <th>Atualizados</th>
+            <th>Removidos</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (log of logs(); track log.id) {
+            <tr>
+              <td>
+                @if (log.success) {
+                  <span class="badge bg-success"><i class="bi bi-check-circle"></i> Sucesso</span>
+                } @else {
+                  <span class="badge bg-danger" [title]="log.error ?? ''"><i class="bi bi-x-circle"></i> Falha</span>
+                }
+              </td>
+              <td>{{ log.startedAt | date: 'dd/MM/yy HH:mm:ss' }}</td>
+              <td>{{ log.finishedAt | date: 'dd/MM/yy HH:mm:ss' }}</td>
+              <td>{{ (log.durationMs / 1000).toFixed(1) }}s</td>
+              <td>{{ log.inserted }}</td>
+              <td>{{ log.updated }}</td>
+              <td>{{ log.removed }}</td>
+              <td class="text-end">
+                @if (auth.can('ADMIN')) {
+                  <button class="btn btn-sm btn-outline-danger" (click)="remove(log)"><i class="bi bi-trash"></i></button>
+                }
+              </td>
+            </tr>
+            @if (!log.success && log.error) {
+              <tr>
+                <td colspan="8" class="pt-0">
+                  <div class="alert alert-danger py-2 px-3 mb-2 small">{{ log.error }}</div>
+                </td>
+              </tr>
+            }
+          }
+
+          @if (logs().length === 0) {
+            <tr>
+              <td colspan="8">
+                <app-empty-state icon="bi-arrow-repeat" message="Nenhuma sincronização registrada ainda." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="total()" (pageChange)="goToPage($event)" />
+}

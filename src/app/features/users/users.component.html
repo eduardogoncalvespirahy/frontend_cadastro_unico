@@ -1,0 +1,198 @@
+<app-page-header
+  title="Usuários"
+  subtitle="Usuários são criados a partir do cadastro de colaboradores sincronizado do RH. Aqui você edita usuário/e-mail/status e gerencia os acessos de cada um."
+>
+  <div style="width: 320px;">
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        class="form-control"
+        placeholder="Buscar por nome, usuário, e-mail ou matrícula"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+  </div>
+</app-page-header>
+
+@if (loading()) {
+  <app-loading-block label="Carregando usuários…" />
+} @else {
+  <div class="table-card">
+    <div class="table-responsive-card">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th appSortHeader="nome" [sort]="sort()" (sortChange)="onSort($event)">Nome</th>
+            <th appSortHeader="matricula" [sort]="sort()" (sortChange)="onSort($event)">Matrícula</th>
+            <th appSortHeader="usuario" [sort]="sort()" (sortChange)="onSort($event)">Usuário</th>
+            <th appSortHeader="email" [sort]="sort()" (sortChange)="onSort($event)">E-mail</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of visibleRows(); track user.userId) {
+            @if (editingId() !== user.userId) {
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="avatar-chip">{{ (user.employeeNome ?? '?').charAt(0).toUpperCase() }}</span>
+                    <span class="fw-semibold">{{ user.employeeNome }}</span>
+                  </div>
+                </td>
+                <td>{{ user.employeeMatricula }}</td>
+                <td>{{ user.userUsername }}</td>
+                <td>{{ user.userEmail }}</td>
+                <td><app-status-badge [status]="user.userStatus" /></td>
+                <td class="text-end">
+                  @if (auth.can('ADMIN')) {
+                    <button class="btn btn-sm btn-outline-primary me-1" (click)="startEdit(user)">
+                      <i class="bi bi-pencil"></i> Editar
+                    </button>
+                  }
+                  <button class="btn btn-sm btn-outline-info" (click)="openDetails(user)">
+                    <i class="bi bi-person-lines-fill"></i> Detalhes
+                  </button>
+                </td>
+              </tr>
+            } @else {
+              <tr>
+                <td>{{ user.employeeNome }}</td>
+                <td>{{ user.employeeMatricula }}</td>
+                <td><input class="form-control form-control-sm" [(ngModel)]="editForm.username" /></td>
+                <td><input class="form-control form-control-sm" [(ngModel)]="editForm.email" /></td>
+                <td>
+                  <select class="form-select form-select-sm" [(ngModel)]="editForm.status">
+                    <option [ngValue]="1">Ativo</option>
+                    <option [ngValue]="0">Inativo</option>
+                  </select>
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-success me-1" (click)="save(user)">Salvar</button>
+                  <button class="btn btn-sm btn-outline-secondary" (click)="cancelEdit()">Cancelar</button>
+                </td>
+              </tr>
+            }
+          }
+
+          @if (visibleRows().length === 0) {
+            <tr>
+              <td colspan="6">
+                <app-empty-state icon="bi-people" message="Nenhum usuário encontrado." />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="totalFiltered()" (pageChange)="goToPage($event)" />
+}
+
+@if (selectedUser(); as user) {
+  <div class="modal-backdrop-custom" (click)="closeDetails()"></div>
+  <div class="modal d-block" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ user.employeeNome }}</h5>
+          <button type="button" class="btn-close" (click)="closeDetails()" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3 mb-4">
+            <div class="col-md-3"><span class="text-muted small d-block">Matrícula</span>{{ user.employeeMatricula }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Usuário</span>{{ user.userUsername }}</div>
+            <div class="col-md-4"><span class="text-muted small d-block">E-mail</span>{{ user.userEmail }}</div>
+            <div class="col-md-2">
+              <span class="text-muted small d-block">Status</span>
+              <app-status-badge [status]="user.userStatus" />
+            </div>
+
+            <div class="col-md-3"><span class="text-muted small d-block">Admissão</span>{{ user.employeeDataAdmissao | date: 'dd/MM/yyyy' }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Departamento</span>{{ user.departmentNome || '—' }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Cargo</span>{{ user.jobPositionNome || '—' }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Centro de custo</span>{{ user.costCenterNome || '—' }}</div>
+
+            <div class="col-md-3"><span class="text-muted small d-block">Turno</span>{{ user.workshiftDescricao || '—' }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Grupo de posto</span>{{ user.workstationGroupNome || '—' }}</div>
+            <div class="col-md-3"><span class="text-muted small d-block">Local</span>{{ user.locationName || '—' }}</div>
+            <div class="col-md-3">
+              <span class="text-muted small d-block">Última sincronização</span>
+              {{ user.ultimaSincronizacao ? (user.ultimaSincronizacao | date: 'dd/MM/yy HH:mm') : '—' }}
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0"><i class="bi bi-hdd-network me-1"></i> Acessos a sistemas</h6>
+            @if (auth.can('ADMIN', 'CREATE')) {
+              <button class="btn btn-sm btn-primary" (click)="openAccessForm()">
+                <i class="bi bi-plus-lg"></i> Novo acesso
+              </button>
+            }
+          </div>
+
+          @if (showAccessForm()) {
+            <div class="card p-2 mb-3">
+              <div class="row g-2">
+                <div class="col-md-5">
+                  <label class="form-label">Sistema</label>
+                  <select class="form-select form-select-sm" [(ngModel)]="accessForm.systemId">
+                    <option value="" disabled>Selecione…</option>
+                    @for (s of systems(); track s.id) {
+                      <option [value]="s.id">{{ s.nome }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label">Senha</label>
+                  <input class="form-control form-control-sm" type="password" [(ngModel)]="accessForm.senha" />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                  <button class="btn btn-sm btn-success w-100" [disabled]="savingAccess()" (click)="saveAccess()">Salvar</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          @if (userCredentialsLoading()) {
+            <app-loading-block label="Carregando acessos…" />
+          } @else {
+            <table class="table table-sm table-striped align-middle">
+              <thead>
+                <tr>
+                  <th>Sistema</th>
+                  <th>Papéis</th>
+                  <th>Locais</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (credential of userCredentials(); track credential.id) {
+                  <tr
+                    app-credential-row
+                    [credential]="credential"
+                    [allLocations]="allLocations()"
+                    [showUser]="false"
+                    [showLastLogin]="false"
+                    (changed)="loadUserCredentials()"
+                  ></tr>
+                }
+
+                @if (userCredentials().length === 0) {
+                  <tr>
+                    <td colspan="5">
+                      <app-empty-state icon="bi-key" message="Nenhum acesso cadastrado ainda." />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}

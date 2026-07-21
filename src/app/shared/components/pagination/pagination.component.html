@@ -1,0 +1,29 @@
+@if ((totalPages() ?? 1) > 1) {
+  <nav class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3">
+    <span class="text-muted small">
+      Página {{ page() }} de {{ totalPages() }}
+      @if (total() !== null) {
+        · {{ total() }} {{ total() === 1 ? 'registro' : 'registros' }}
+      }
+    </span>
+    <ul class="pagination mb-0">
+      <li class="page-item" [class.disabled]="page() === 1">
+        <button class="page-link" (click)="goTo(1)" aria-label="Primeira"><i class="bi bi-chevron-double-left"></i></button>
+      </li>
+      <li class="page-item" [class.disabled]="page() === 1">
+        <button class="page-link" (click)="goTo(page() - 1)" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+      </li>
+      @for (p of pages(); track p) {
+        <li class="page-item" [class.active]="p === page()">
+          <button class="page-link" (click)="goTo(p)">{{ p }}</button>
+        </li>
+      }
+      <li class="page-item" [class.disabled]="page() === totalPages()">
+        <button class="page-link" (click)="goTo(page() + 1)" aria-label="Próxima"><i class="bi bi-chevron-right"></i></button>
+      </li>
+      <li class="page-item" [class.disabled]="page() === totalPages()">
+        <button class="page-link" (click)="goTo(totalPages()!)" aria-label="Última"><i class="bi bi-chevron-double-right"></i></button>
+      </li>
+    </ul>
+  </nav>
+}

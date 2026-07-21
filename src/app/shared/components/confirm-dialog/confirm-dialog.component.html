@@ -1,0 +1,30 @@
+@if (confirmService.request(); as request) {
+  <div class="modal-backdrop-custom" (click)="confirmService.resolve(false)"></div>
+  <div class="modal d-block" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ request.title }}</h5>
+          <button type="button" class="btn-close" (click)="confirmService.resolve(false)" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">{{ request.message }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" (click)="confirmService.resolve(false)">
+            {{ request.cancelText ?? 'Cancelar' }}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn-danger]="(request.variant ?? 'danger') === 'danger'"
+            [class.btn-primary]="request.variant === 'primary'"
+            (click)="confirmService.resolve(true)"
+          >
+            {{ request.confirmText ?? 'Confirmar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
