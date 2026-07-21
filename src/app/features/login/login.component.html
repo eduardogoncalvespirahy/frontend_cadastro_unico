@@ -6,41 +6,81 @@
       <p>Gestão central de usuários, credenciais e sistemas</p>
     </div>
 
+    <div class="login-type mb-4">
+      @for (t of types; track t.value) {
+        <button
+          type="button"
+          class="login-type-btn"
+          [class.active]="identifierType() === t.value"
+          (click)="changeType(t.value)"
+        >
+          {{ t.label }}
+        </button>
+      }
+    </div>
+
     <form (ngSubmit)="submit()">
-      <div class="mb-3">
-        <label class="form-label">Usuário, e-mail ou matrícula</label>
-        <div class="input-group">
-          <span class="input-group-text"><i class="bi bi-person"></i></span>
-          <input
-            class="form-control"
-            name="identifier"
-            [(ngModel)]="identifier"
-            required
-            autofocus
-            autocomplete="username"
-          />
-        </div>
+      <div class="form-floating mb-3">
+        <input
+          id="identifier"
+          class="form-control"
+          name="identifier"
+          [type]="identifierType() === 'registerNumber' ? 'number' : 'text'"
+          [ngModel]="identifier()"
+          (ngModelChange)="identifier.set($event)"
+          autocomplete="username"
+          placeholder="Identificação"
+        />
+
+        <label for="identifier">
+          {{ identifierLabel() }}
+        </label>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">Senha</label>
-        <div class="input-group">
-          <span class="input-group-text"><i class="bi bi-lock"></i></span>
+      <div class="input-group mb-3">
+        <div class="form-floating flex-grow-1">
           <input
+            id="password"
             class="form-control"
-            type="password"
             name="password"
-            [(ngModel)]="password"
-            required
+            [type]="showPassword() ? 'text' : 'password'"
+            [ngModel]="password()"
+            (ngModelChange)="password.set($event)"
             autocomplete="current-password"
+            placeholder="Senha"
           />
+
+          <label for="password"> Senha </label>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          (click)="togglePasswordVisibility()"
+        >
+          <i class="bi" [class.bi-eye]="!showPassword()" [class.bi-eye-slash]="showPassword()"></i>
+        </button>
+      </div>
+
+      <div class="login-options">
+        <div class="form-check form-switch">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="remember"
+            name="rememberAccess"
+            [ngModel]="rememberAccess()"
+            (ngModelChange)="rememberAccess.set($event)"
+          />
+
+          <label class="form-check-label" for="remember"> Lembrar acesso </label>
         </div>
       </div>
 
-      @if (error()) {
+      @if (error(); as errorMessage) {
         <div class="alert alert-danger py-2 d-flex align-items-center gap-2">
           <i class="bi bi-exclamation-triangle-fill"></i>
-          <span>{{ error() }}</span>
+          <span>{{ errorMessage }}</span>
         </div>
       }
 

@@ -1,172 +1,365 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, Injector, computed, inject, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, firstValueFrom } from 'rxjs';
-import { finalize, shareReplay } from 'rxjs/operators';
+
+import {
+  Observable,
+  EMPTY,
+  catchError,
+  filter,
+  finalize,
+  forkJoin,
+  map,
+  of,
+  switchMap,
+  take,
+  tap,
+  throwError,
+} from 'rxjs';
+
+import { CookieService } from './cookie.service';
+import { UserService } from './user.service';
+import { CredentialRoleService } from './credential-role.service';
+import { CredentialLocationService } from './credential-location.service';
+
 import { environment } from '../../../environments/environment';
-import { LoginUserRequest, LoginUserResponse, RefreshResponse } from '../models/auth.model';
-import { UserProfile } from '../models/user.model';
 
-const STORAGE_KEY = 'cadastro-unico.session';
+import { LoginUserRequest, LoginUserResponse } from '../models/auth.model';
+import { UserProfile } from '../models/user-profile.model';
 
-interface StoredSession {
-  userId: string;
-  credentialId: string;
-}
+// Identificadores NÃO sensíveis, mantidos no cliente apenas para restaurar a
+// sessão e carregar o perfil após um reload. O token e o refreshToken NÃO são
+// mais guardados aqui — vivem em cookies httpOnly setados pelo servidor.
+const USER_ID = 'aq_userId';
+const CREDENTIAL_ID = 'aq_credentialId';
 
-/**
- * O backend autentica via cookies httpOnly (`token`/`refreshToken`) — o JS
- * nunca vê o JWT. Por isso guardamos localmente só os IDs (não-sensíveis) e
- * buscamos os papéis/perfil via API sempre que precisamos deles.
- */
-@Injectable({ providedIn: 'root' })
+// Chaves legadas (token/refresh no cliente). Mantidas só para limpeza.
+const LEGACY_TOKEN_KEY = 'aq_token';
+const LEGACY_REFRESH_KEY = 'aq_refresh';
+
+@Injectable({
+  providedIn: 'root',
+})
 export class AuthService {
-  private readonly baseUrl = `${environment.apiUrl}/auth`;
+  private readonly http = inject(HttpClient);
+  private readonly cookie = inject(CookieService);
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
 
-  private readonly userIdSignal = signal<string | null>(null);
-  private readonly credentialIdSignal = signal<string | null>(null);
-  private readonly rolesSignal = signal<string[]>([]);
-  private readonly profileSignal = signal<UserProfile | null>(null);
-  private readonly readySignal = signal(false);
+  private readonly userService = inject(UserService);
+  private readonly credentialRoleService = inject(CredentialRoleService);
+  private readonly credentialLocationService = inject(CredentialLocationService);
 
-  readonly userId = this.userIdSignal.asReadonly();
-  readonly credentialId = this.credentialIdSignal.asReadonly();
-  readonly roles = this.rolesSignal.asReadonly();
-  readonly profile = this.profileSignal.asReadonly();
-  readonly ready = this.readySignal.asReadonly();
+  // =====================================================
+  // AUTH
+  // =====================================================
 
-  readonly isAuthenticated = computed(() => !!this.credentialIdSignal());
-  readonly isAdmin = computed(() => this.rolesSignal().includes('ADMIN'));
+  // O token real fica no cookie httpOnly (inacessível ao JS). Mantemos uma
+  // cópia EM MEMÓRIA só para o tempo de vida da aba (útil para quem quiser ler
+  // auth.token()). Após um reload ela é null — a autenticação continua válida
+  // pelo cookie, e o estado é derivado do userId persistido.
+  private readonly _token = signal<string | null>(null);
+  readonly token = this._token.asReadonly();
+
+  private readonly _userId = signal<string | null>(this.read(USER_ID));
+  readonly userId = this._userId.asReadonly();
+
+  private readonly _credentialId = signal<string | null>(this.read(CREDENTIAL_ID));
+  readonly credentialId = this._credentialId.asReadonly();
+
+  // Autenticação é derivada da presença do userId persistido (o servidor é a
+  // fonte de verdade: se o cookie estiver expirado, a 1ª chamada dá 401 e o
+  // fluxo de refresh/logout assume).
+  readonly isAuthenticated = computed(() => !!this._userId());
+
+  // =====================================================
+  // PROFILE
+  // =====================================================
+
+  private readonly _userProfile = signal<UserProfile | null>(null);
+
+  private readonly _loading = signal(false);
+
+  readonly userProfile = this._userProfile.asReadonly();
+
+  readonly loading = this._loading.asReadonly();
+
+  readonly isProfileLoaded = computed(() => this._userProfile() !== null);
+
   readonly displayName = computed(
-    () => this.profileSignal()?.employeeNome ?? this.profileSignal()?.userUsername ?? 'Usuário',
+    () => this.userProfile()?.employeeNome ?? this.userProfile()?.userUsername ?? 'Usuário',
   );
 
-  private readyPromise: Promise<void>;
-  private refreshInFlight$: Observable<RefreshResponse> | null = null;
+  // =====================================================
+  // ROLES
+  // =====================================================
 
-  constructor(
-    private readonly http: HttpClient,
-    private readonly router: Router,
-  ) {
-    this.readyPromise = this.bootstrap();
+  private readonly _roles = signal<string[]>([]);
+  private readonly _locations = signal<string[]>([]);
+
+  /** Nomes das roles da credencial autenticada. */
+  readonly roles = this._roles.asReadonly();
+
+  /** Nomes das locations da credencial autenticada. */
+  readonly locations = this._locations.asReadonly();
+
+  /** Verifica se a credencial autenticada possui uma role específica. */
+  hasRole(role: string): boolean {
+    return this._roles().includes(role);
   }
 
-  whenReady(): Promise<void> {
-    return this.readyPromise;
+  /** Verifica se a credencial autenticada possui uma location específica. */
+  hasLocation(location: string): boolean {
+    return this._locations().includes(location);
   }
 
-  private async bootstrap(): Promise<void> {
-    const stored = this.readStorage();
-    if (!stored) {
-      this.readySignal.set(true);
+  /** Verifica se possui ao menos uma das roles informadas. */
+  hasAnyRole(...roles: string[]): boolean {
+    return roles.some((r) => this._roles().includes(r));
+  }
+
+  /** Verifica se possui ao menos uma das locations informadas. */
+  hasAnyLocation(...locations: string[]): boolean {
+    return locations.some((l) => this._locations().includes(l));
+  }
+
+  constructor() {}
+
+  // =====================================================
+  // LOGIN
+  // =====================================================
+
+  login(request: LoginUserRequest): Observable<UserProfile> {
+    // withCredentials: o servidor devolve os cookies httpOnly (token/refresh)
+    // no Set-Cookie; o navegador os guarda e reenvia nas próximas chamadas.
+    return this.http
+      .post<LoginUserResponse>(`${environment.apiUrl}/auth/user/login`, request, {
+        withCredentials: true,
+      })
+      .pipe(
+        tap((response) => this.persistSession(response)),
+
+        // Carrega perfil + roles (reaproveita loadProfile).
+        switchMap(() => this.loadProfile()),
+      );
+  }
+
+  // =====================================================
+  // REFRESH
+  // =====================================================
+
+  /**
+   * Renova o token usando o cookie httpOnly de refresh (enviado automaticamente
+   * com withCredentials). O servidor rotaciona o refresh e reescreve os cookies;
+   * aqui só atualizamos userId/credentialId (e o token em memória).
+   *
+   * Em caso de falha (refresh inválido/expirado), encerra a sessão localmente.
+   * Ideal ser chamado por um HTTP interceptor ao receber 401.
+   */
+  refresh(): Observable<LoginUserResponse> {
+    return this.http
+      .post<LoginUserResponse>(`${environment.apiUrl}/auth/refresh`, {}, { withCredentials: true })
+      .pipe(
+        tap((response) => this.persistSession(response)),
+        catchError((error) => {
+          this.clearProfile();
+          this.clear();
+          this.router.navigate(['/login']);
+          return throwError(() => error);
+        }),
+      );
+  }
+
+  // =====================================================
+  // SESSION RESTORE
+  // =====================================================
+
+  restoreSession(): void {
+    const userId = this._userId();
+
+    // Sem userId persistido não há o que restaurar. O token não é verificável
+    // aqui (é httpOnly); a validade real é conferida ao carregar o perfil.
+    if (!userId) {
       return;
     }
 
-    this.userIdSignal.set(stored.userId);
-    this.credentialIdSignal.set(stored.credentialId);
-
-    try {
-      await this.loadSession();
-    } catch {
-      this.clearLocalSession();
-    } finally {
-      this.readySignal.set(true);
-    }
+    this.loadProfile().subscribe({
+      error: (error) => {
+        console.error('Erro ao restaurar sessão:', error);
+      },
+    });
   }
 
-  async login(request: LoginUserRequest): Promise<void> {
-    const body: LoginUserRequest = { systemId: environment.systemId, ...request };
-    const response = await firstValueFrom(
-      this.http.post<LoginUserResponse>(`${this.baseUrl}/user/login`, body),
+  // =====================================================
+  // PROFILE + ROLES + LOCATIONS
+  // =====================================================
+
+  loadProfile(): Observable<UserProfile> {
+    const userId = this.userId();
+    const credentialId = this.credentialId();
+
+    if (!userId) {
+      return throwError(() => new Error('UserId não encontrado'));
+    }
+
+    if (this._loading()) {
+      return EMPTY;
+    }
+
+    this._loading.set(true);
+
+    return forkJoin({
+      profile: this.userService.findProfileById(userId),
+      // Se a falha nas roles não deve impedir o login, mantemos o catchError → [].
+      roles: credentialId
+        ? this.credentialRoleService
+            .findRoleNamesByCredential(credentialId)
+            .pipe(catchError(() => of<string[]>([])))
+        : of<string[]>([]),
+
+      // Se a falha nas locations não deve impedir o login, mantemos o catchError → [].
+      locations: credentialId
+        ? this.credentialLocationService
+            .findLocationNamesByCredential(credentialId)
+            .pipe(catchError(() => of<string[]>([])))
+        : of<string[]>([]),
+    }).pipe(
+      tap(({ profile, roles, locations }) => {
+        this._userProfile.set(profile);
+        this._roles.set(roles ?? []);
+        this._locations.set(locations ?? []);
+      }),
+
+      map(({ profile }) => profile),
+
+      finalize(() => {
+        this._loading.set(false);
+      }),
+
+      catchError((error) => {
+        console.error('Erro ao carregar perfil:', error);
+
+        this.clearProfile();
+
+        return throwError(() => error);
+      }),
     );
-
-    this.userIdSignal.set(response.userId);
-    this.credentialIdSignal.set(response.credentialId);
-    this.persist();
-
-    await this.loadSession();
   }
 
-  async logout(): Promise<void> {
-    try {
-      await firstValueFrom(this.http.post(`${this.baseUrl}/logout`, {}));
-    } catch {
-      // mesmo se a chamada falhar, limpamos o estado local
+  refreshProfile(): void {
+    this.clearProfile();
+
+    this.loadProfile().subscribe({
+      error: (error) => {
+        console.error(error);
+      },
+    });
+  }
+
+  forceReloadProfile(): void {
+    this.refreshProfile();
+  }
+
+  /**
+   * Garante que o perfil (e as roles/locations) estejam carregados antes de
+   * uma verificação — essencial para os guards logo após um reload, quando as
+   * roles ainda não vieram. Reaproveita o carregamento em andamento, se houver.
+   *
+   *  - perfil já carregado            → true;
+   *  - sem userId (sem sessão)        → false;
+   *  - carregamento em andamento      → aguarda terminar e devolve o resultado;
+   *  - senão                          → dispara loadProfile e mapeia sucesso/erro.
+   */
+  ensureProfileLoaded(): Observable<boolean> {
+    if (this.isProfileLoaded()) {
+      return of(true);
     }
-    this.clearLocalSession();
-    this.router.navigate(['/login']);
-  }
 
-  /** Usado pelo interceptor de refresh quando uma chamada volta 401. */
-  handleUnauthorized(): Observable<RefreshResponse> {
-    if (!this.refreshInFlight$) {
-      this.refreshInFlight$ = this.http.post<RefreshResponse>(`${this.baseUrl}/refresh`, {}).pipe(
-        shareReplay(1),
-        finalize(() => {
-          this.refreshInFlight$ = null;
-        }),
+    if (!this._userId()) {
+      return of(false);
+    }
+
+    if (this._loading()) {
+      // espera o loadProfile em andamento concluir (sucesso → profile setado).
+      return toObservable(this._loading, { injector: this.injector }).pipe(
+        filter((loading) => !loading),
+        take(1),
+        map(() => this.isProfileLoaded()),
       );
     }
-    return this.refreshInFlight$;
+
+    return this.loadProfile().pipe(
+      map(() => true),
+      catchError(() => of(false)),
+    );
   }
 
-  /** Chamado pelo interceptor quando nem o refresh salva a sessão. */
-  forceLogout(): void {
-    this.clearLocalSession();
-    this.router.navigate(['/login']);
+  private clearProfile(): void {
+    this._userProfile.set(null);
+    this._roles.set([]);
+    this._locations.set([]);
   }
 
-  /** true se a credencial logada tem ADMIN ou qualquer um dos papéis informados. */
-  can(...allowed: string[]): boolean {
-    if (this.isAdmin()) return true;
-    const roles = this.rolesSignal();
-    return allowed.some((role) => roles.includes(role));
+  // =====================================================
+  // LOGOUT
+  // =====================================================
+
+  logout(): void {
+    // Pede ao servidor para invalidar a sessão e limpar os cookies httpOnly.
+    // Independente do resultado, limpamos o estado local e vamos para o login.
+    this.http
+      .post(`${environment.apiUrl}/auth/logout`, {}, { withCredentials: true })
+      .pipe(
+        catchError(() => of(null)),
+        finalize(() => {
+          this.clearProfile();
+          this.clear();
+          this.router.navigate(['/login']);
+        }),
+      )
+      .subscribe();
   }
 
-  async refreshProfile(): Promise<void> {
-    await this.loadSession();
+  // =====================================================
+  // SESSION STATE (client-side, não sensível)
+  // =====================================================
+
+  /** Persiste apenas identificadores não sensíveis + token em memória. */
+  private persistSession(response: LoginUserResponse): void {
+    this.write(USER_ID, response.userId);
+    this.write(CREDENTIAL_ID, response.credentialId);
+
+    this._userId.set(response.userId);
+    this._credentialId.set(response.credentialId);
+
+    // token/refresh são cookies httpOnly do servidor; guardamos o token só em
+    // memória (opcional). NÃO escrevemos token/refresh em cookie no cliente.
+    this._token.set(response.token ?? null);
   }
 
-  private async loadSession(): Promise<void> {
-    const credentialId = this.credentialIdSignal();
-    const userId = this.userIdSignal();
-    if (!credentialId || !userId) return;
-
-    const rolesUrl = `${environment.apiUrl}/credentials-roles/roles/credential/${credentialId}`;
-    const profileUrl = `${environment.apiUrl}/users/profile/${userId}`;
-
-    const [roles, profile] = await Promise.all([
-      firstValueFrom(this.http.get<string[]>(rolesUrl)),
-      firstValueFrom(this.http.get<UserProfile>(profileUrl)).catch(() => null),
-    ]);
-
-    this.rolesSignal.set(roles);
-    this.profileSignal.set(profile);
+  private read(key: string): string | null {
+    return this.cookie.get(key);
   }
 
-  private clearLocalSession(): void {
-    this.userIdSignal.set(null);
-    this.credentialIdSignal.set(null);
-    this.rolesSignal.set([]);
-    this.profileSignal.set(null);
-    localStorage.removeItem(STORAGE_KEY);
+  private write(key: string, value: string): void {
+    this.cookie.set(key, value, {
+      path: '/',
+      sameSite: 'Strict',
+      secure: location.protocol === 'https:',
+      maxAge: 3600000,
+    });
   }
 
-  private persist(): void {
-    const userId = this.userIdSignal();
-    const credentialId = this.credentialIdSignal();
-    if (!userId || !credentialId) return;
-    const stored: StoredSession = { userId, credentialId };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-  }
+  private clear(): void {
+    // Remove os identificadores do cliente + eventuais cookies legados.
+    this.cookie.delete(USER_ID);
+    this.cookie.delete(CREDENTIAL_ID);
+    this.cookie.delete(LEGACY_TOKEN_KEY);
+    this.cookie.delete(LEGACY_REFRESH_KEY);
 
-  private readStorage(): StoredSession | null {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as StoredSession;
-    } catch {
-      return null;
-    }
+    this._token.set(null);
+    this._userId.set(null);
+    this._credentialId.set(null);
   }
 }

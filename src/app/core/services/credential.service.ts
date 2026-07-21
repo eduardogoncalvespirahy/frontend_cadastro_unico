@@ -15,7 +15,7 @@ export class CredentialService {
 
   constructor(private readonly http: HttpClient) {}
 
-  findAll(page = 1, limit = 500): Observable<PaginatedResult<Credential>> {
+  findAll(page: number, limit: number): Observable<PaginatedResult<Credential>> {
     return this.http.get<PaginatedResult<Credential>>(this.baseUrl, { params: { page, limit } });
   }
 

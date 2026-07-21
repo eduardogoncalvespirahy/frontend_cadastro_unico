@@ -1,0 +1,19 @@
+<div class="exit-container">
+  <div class="exit-icon">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+  </div>
+
+  <div class="exit-content">
+    <h5 class="exit-title">Confirmação</h5>
+
+    <p class="exit-message">
+      {{ message() }}
+    </p>
+
+    @if (hasDetails()) {
+      <div class="exit-details">
+        {{ details() }}
+      </div>
+    }
+  </div>
+</div>

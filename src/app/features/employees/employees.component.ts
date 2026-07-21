@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { EmployeeService } from '../../core/services/employee.service';
 import { EmployerService } from '../../core/services/employer.service';
@@ -18,6 +18,16 @@ import { LoadingBlockComponent } from '../../shared/components/loading-block/loa
 import { PaginationComponent } from '../../shared/components/pagination/pagination.component';
 
 const PAGE_SIZE = 20;
+// Tamanho de página usado para varrer listas completas (o backend só pagina, não filtra).
+const FETCH_PAGE_SIZE = 200;
+
+type AccountFilter = 'all' | 'with' | 'without';
+
+/** Estrutura mínima de uma resposta paginada, usada pelo fetchAll genérico. */
+interface Paginated<T> {
+  data: T[];
+  total?: number | null;
+}
 
 @Component({
   selector: 'app-employees',
@@ -40,7 +50,23 @@ export class EmployeesComponent implements OnInit {
   protected readonly totalFiltered = signal(0);
   protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.totalFiltered() / PAGE_SIZE)));
   protected readonly page = signal(1);
+
+  // Filtros
   protected readonly search = signal('');
+  protected readonly filterEmployerId = signal('');
+  protected readonly filterDepartmentId = signal('');
+  protected readonly accountFilter = signal<AccountFilter>('all');
+  protected readonly hasActiveFilters = computed(
+    () =>
+      this.search().trim() !== '' ||
+      this.filterEmployerId() !== '' ||
+      this.filterDepartmentId() !== '' ||
+      this.accountFilter() !== 'all',
+  );
+
+  // Listas para os dropdowns de filtro.
+  protected readonly employersList = signal<{ id: string; name: string }[]>([]);
+  protected readonly departmentsList = signal<{ id: string; name: string }[]>([]);
 
   private employerNames = new Map<string, string>();
   private departmentNames = new Map<string, string>();
@@ -57,27 +83,55 @@ export class EmployeesComponent implements OnInit {
     await this.load();
   }
 
+  /** Varre todas as páginas de um endpoint paginado (page/limit) e junta o resultado. */
+  private async fetchAll<T>(
+    fetchPage: (page: number, limit: number) => Observable<Paginated<T>>,
+  ): Promise<T[]> {
+    const first = await firstValueFrom(fetchPage(1, FETCH_PAGE_SIZE));
+    // Ajuste o campo conforme o seu PaginatedResult (total / totalItems / meta.total…).
+    const total = first.total ?? first.data.length;
+    const all = [...first.data];
+    const pages = Math.ceil(total / FETCH_PAGE_SIZE);
+    for (let p = 2; p <= pages; p++) {
+      const next = await firstValueFrom(fetchPage(p, FETCH_PAGE_SIZE));
+      all.push(...next.data);
+    }
+    return all;
+  }
+
   private async loadLookups(): Promise<void> {
+    // employers/departments/jobPositions/costCenters usam findAll() sem paginação (retornam tudo).
     const [employers, departments, jobPositions, costCenters, users] = await Promise.all([
       firstValueFrom(this.employerService.findAll()).catch(() => ({ data: [] as { id: string; tradingName: string | null }[] })),
       firstValueFrom(this.departmentService.findAll()).catch(() => ({ data: [] as { id: string; name: string | null }[] })),
       firstValueFrom(this.jobPositionService.findAll()).catch(() => ({ data: [] as { id: string; name: string | null }[] })),
       firstValueFrom(this.costCenterService.findAll()).catch(() => ({ data: [] as { id: string; name: string | null }[] })),
-      firstValueFrom(this.userService.findAll(1, 1000)).catch(() => ({ data: [] as { employeeId: string }[] })),
+      // Usuários podem passar de 1000 — varre até o fim para não perder o marcador "tem usuário".
+      this.fetchAll<{ employeeId: string }>((p, l) => this.userService.findAll(p, l)).catch(() => [] as { employeeId: string }[]),
     ]);
 
     this.employerNames = new Map(employers.data.map((e) => [e.id, e.tradingName ?? e.id]));
     this.departmentNames = new Map(departments.data.map((d) => [d.id, d.name ?? d.id]));
     this.jobPositionNames = new Map(jobPositions.data.map((j) => [j.id, j.name ?? j.id]));
     this.costCenterNames = new Map(costCenters.data.map((c) => [c.id, c.name ?? c.id]));
-    this.employeeIdsWithUser = new Set(users.data.map((u) => u.employeeId));
+    this.employeeIdsWithUser = new Set(users.map((u) => u.employeeId));
+
+    this.employersList.set(
+      employers.data
+        .map((e) => ({ id: e.id, name: e.tradingName ?? e.id }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    this.departmentsList.set(
+      departments.data
+        .map((d) => ({ id: d.id, name: d.name ?? d.id }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
   }
 
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const result = await firstValueFrom(this.employeeService.findAll(1, 1000));
-      this.allEmployees.set(result.data);
+      this.allEmployees.set(await this.fetchAll((p, l) => this.employeeService.findAll(p, l)));
       this.applyFilters();
     } catch (err) {
       this.toast.apiError('Não foi possível carregar os colaboradores', err);
@@ -88,21 +142,63 @@ export class EmployeesComponent implements OnInit {
 
   applyFilters(): void {
     const term = this.search().trim().toLowerCase();
+    const employerId = this.filterEmployerId();
+    const departmentId = this.filterDepartmentId();
+    const account = this.accountFilter();
+
     let list = this.allEmployees();
+
     if (term) {
       list = list.filter(
         (e) => e.personName?.toLowerCase().includes(term) || String(e.registerNumber ?? '').includes(term),
       );
     }
+    if (employerId) list = list.filter((e) => e.employerId === employerId);
+    if (departmentId) list = list.filter((e) => e.departmentId === departmentId);
+    if (account === 'with') list = list.filter((e) => this.hasUser(e));
+    else if (account === 'without') list = list.filter((e) => !this.hasUser(e));
+
     list = [...list].sort((a, b) => (a.personName ?? '').localeCompare(b.personName ?? ''));
 
     this.totalFiltered.set(list.length);
+
+    // Reposiciona a página caso o filtro reduza o total abaixo da página atual.
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    if (this.page() > pages) this.page.set(pages);
+
     const start = (this.page() - 1) * PAGE_SIZE;
     this.visibleRows.set(list.slice(start, start + PAGE_SIZE));
   }
 
   onSearchChange(term: string): void {
     this.search.set(term);
+    this.page.set(1);
+    this.applyFilters();
+  }
+
+  onEmployerChange(value: string): void {
+    this.filterEmployerId.set(value);
+    this.page.set(1);
+    this.applyFilters();
+  }
+
+  onDepartmentChange(value: string): void {
+    this.filterDepartmentId.set(value);
+    this.page.set(1);
+    this.applyFilters();
+  }
+
+  onAccountChange(value: AccountFilter): void {
+    this.accountFilter.set(value);
+    this.page.set(1);
+    this.applyFilters();
+  }
+
+  clearFilters(): void {
+    this.search.set('');
+    this.filterEmployerId.set('');
+    this.filterDepartmentId.set('');
+    this.accountFilter.set('all');
     this.page.set(1);
     this.applyFilters();
   }

@@ -3,7 +3,8 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { PaginatedResult } from '../models/paginated.model';
-import { CreateUserRequest, UpdateUserRequest, User, UserProfile } from '../models/user.model';
+import { CreateUserRequest, UpdateUserRequest, User } from '../models/user.model';
+import { UserProfile } from '../models/user-profile.model';
 
 @Injectable({ providedIn: 'root' })
 export class UserService {

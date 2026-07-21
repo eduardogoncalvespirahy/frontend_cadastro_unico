@@ -2,22 +2,63 @@
   title="Colaboradores"
   subtitle="Dados sincronizados do RH (Senior) — somente leitura. Colaboradores sem usuário no Cadastro Único ainda não conseguem receber credenciais."
 >
-  <div style="width: 300px;">
-    <div class="input-group">
-      <span class="input-group-text"><i class="bi bi-search"></i></span>
-      <input
-        class="form-control"
-        placeholder="Buscar por nome ou matrícula"
-        [ngModel]="search()"
-        (ngModelChange)="onSearchChange($event)"
-      />
-    </div>
-  </div>
 </app-page-header>
 
 <div class="section-note">
   <i class="bi bi-info-circle"></i>
   <span>Estes dados vêm do sistema de RH e são substituídos na próxima sincronização — edite-os por lá, não aqui.</span>
+</div>
+
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div style="flex: 1 1 240px; min-width: 220px;">
+    <label class="form-label small text-muted mb-1">Buscar</label>
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        class="form-control"
+        placeholder="Nome ou matrícula"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+  </div>
+
+  <div style="min-width: 200px;">
+    <label class="form-label small text-muted mb-1">Empresa</label>
+    <select class="form-select" [ngModel]="filterEmployerId()" (ngModelChange)="onEmployerChange($event)">
+      <option value="">Todas</option>
+      @for (e of employersList(); track e.id) {
+        <option [value]="e.id">{{ e.name }}</option>
+      }
+    </select>
+  </div>
+
+  <div style="min-width: 200px;">
+    <label class="form-label small text-muted mb-1">Departamento</label>
+    <select class="form-select" [ngModel]="filterDepartmentId()" (ngModelChange)="onDepartmentChange($event)">
+      <option value="">Todos</option>
+      @for (d of departmentsList(); track d.id) {
+        <option [value]="d.id">{{ d.name }}</option>
+      }
+    </select>
+  </div>
+
+  <div style="min-width: 160px;">
+    <label class="form-label small text-muted mb-1">Conta</label>
+    <select class="form-select" [ngModel]="accountFilter()" (ngModelChange)="onAccountChange($event)">
+      <option value="all">Todos</option>
+      <option value="with">Com usuário</option>
+      <option value="without">Sem acesso</option>
+    </select>
+  </div>
+
+  @if (hasActiveFilters()) {
+    <div>
+      <button class="btn btn-outline-secondary" (click)="clearFilters()">
+        <i class="bi bi-x-lg"></i> Limpar filtros
+      </button>
+    </div>
+  }
 </div>
 
 @if (loading()) {
@@ -62,7 +103,7 @@
                 }
               </td>
               <td class="text-end">
-                @if (!hasUser(employee) && auth.can('ADMIN')) {
+                @if (!hasUser(employee) && auth.hasAnyRole('ADMIN')) {
                   <button class="btn btn-sm btn-outline-primary" (click)="openCreateUser(employee)">
                     <i class="bi bi-person-plus"></i> Criar usuário
                   </button>
@@ -74,7 +115,10 @@
           @if (visibleRows().length === 0) {
             <tr>
               <td colspan="9">
-                <app-empty-state icon="bi-person-badge" message="Nenhum colaborador encontrado." />
+                <app-empty-state
+                  icon="bi-person-badge"
+                  [message]="hasActiveFilters() ? 'Nenhum colaborador encontrado.' : 'Nenhum colaborador sincronizado ainda.'"
+                />
               </td>
             </tr>
           }

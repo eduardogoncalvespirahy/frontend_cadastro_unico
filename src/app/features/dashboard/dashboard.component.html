@@ -5,7 +5,7 @@
   </div>
 </div>
 
-@if (!auth.isAdmin()) {
+@if (!auth.hasRole('ADMIN')) {
   <div class="section-note">
     <i class="bi bi-shield-lock"></i>
     <span>

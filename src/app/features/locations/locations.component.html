@@ -1,5 +1,5 @@
 <app-page-header title="Locais" subtitle="Matriz, filiais e outros locais que podem ser vinculados a uma credencial.">
-  @if (auth.can('ADMIN')) {
+  @if (auth.hasAnyRole('ADMIN')) {
     <button class="btn btn-primary btn-sm" (click)="openForm()"><i class="bi bi-plus-lg"></i> Novo local</button>
   }
 </app-page-header>
@@ -31,6 +31,48 @@
   </div>
 }
 
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div style="flex: 1 1 260px; min-width: 240px;">
+    <label class="form-label small text-muted mb-1">Buscar</label>
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        class="form-control"
+        placeholder="Nome, descrição ou empresa"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+  </div>
+
+  <div style="min-width: 200px;">
+    <label class="form-label small text-muted mb-1">Empresa</label>
+    <select class="form-select" [ngModel]="filterEmployerId()" (ngModelChange)="onEmployerChange($event)">
+      <option value="">Todas</option>
+      @for (e of employers(); track e.id) {
+        <option [value]="e.id">{{ e.tradingName ?? e.id }}</option>
+      }
+    </select>
+  </div>
+
+  <div style="min-width: 150px;">
+    <label class="form-label small text-muted mb-1">Status</label>
+    <select class="form-select" [ngModel]="statusFilter()" (ngModelChange)="onStatusChange($event)">
+      <option value="all">Todos</option>
+      <option value="1">Ativo</option>
+      <option value="0">Inativo</option>
+    </select>
+  </div>
+
+  @if (hasActiveFilters()) {
+    <div>
+      <button class="btn btn-outline-secondary" (click)="clearFilters()">
+        <i class="bi bi-x-lg"></i> Limpar filtros
+      </button>
+    </div>
+  }
+</div>
+
 @if (loading()) {
   <app-loading-block label="Carregando locais…" />
 } @else {
@@ -47,7 +89,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (location of locations(); track location.id) {
+          @for (location of visibleRows(); track location.id) {
             <tr>
               <td>{{ employerName(location.employerId) }}</td>
               <td><span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-geo-alt-fill"></i> {{ location.nome }}</span></td>
@@ -58,7 +100,7 @@
                 </span>
               </td>
               <td class="text-end">
-                @if (auth.can('ADMIN')) {
+                @if (auth.hasAnyRole('ADMIN')) {
                   <button class="btn btn-sm btn-outline-danger" (click)="remove(location)">
                     <i class="bi bi-trash"></i> Remover
                   </button>
@@ -67,10 +109,13 @@
             </tr>
           }
 
-          @if (locations().length === 0) {
+          @if (visibleRows().length === 0) {
             <tr>
               <td colspan="5">
-                <app-empty-state icon="bi-geo-alt" message="Nenhum local cadastrado ainda." />
+                <app-empty-state
+                  icon="bi-geo-alt"
+                  [message]="hasActiveFilters() ? 'Nenhum local encontrado.' : 'Nenhum local cadastrado ainda.'"
+                />
               </td>
             </tr>
           }
@@ -78,4 +123,6 @@
       </table>
     </div>
   </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="total()" (pageChange)="goToPage($event)" />
 }

@@ -1,8 +1,8 @@
-@if (!auth.ready()) {
+<!-- @if (!auth.loading()) {
   <div class="boot-screen">
     <span class="spinner-border text-primary" aria-hidden="true"></span>
   </div>
-} @else {
+} @else { -->
   <div class="app-shell">
     @if (auth.isAuthenticated()) {
       <div class="sidebar-backdrop d-lg-none" [class.show]="sidebarOpen()" (click)="closeSidebar()"></div>
@@ -65,4 +65,4 @@
 
   <app-toast-container></app-toast-container>
   <app-confirm-dialog></app-confirm-dialog>
-}
+<!-- } -->

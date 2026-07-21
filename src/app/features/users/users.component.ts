@@ -10,18 +10,17 @@ import { SystemService } from '../../core/services/system.service';
 import { LocationService } from '../../core/services/location.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
-import { UpdateUserRequest, UserProfile } from '../../core/models/user.model';
+import { UpdateUserRequest } from '../../core/models/user.model';
 import { CreateCredentialRequest, CredentialView } from '../../core/models/credential.model';
 import { System } from '../../core/models/system.model';
 import { Location } from '../../core/models/location.model';
-import { SortState } from '../../core/models/sort.model';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
-import { SortHeaderComponent } from '../../shared/components/sort-header/sort-header.component';
 import { CredentialRowComponent } from '../../shared/components/credential-row/credential-row.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state/empty-state.component';
 import { LoadingBlockComponent } from '../../shared/components/loading-block/loading-block.component';
 import { PaginationComponent } from '../../shared/components/pagination/pagination.component';
 import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
+import { UserProfile } from '../../core/models/user-profile.model';
 
 const PAGE_SIZE = 20;
 
@@ -31,7 +30,6 @@ const PAGE_SIZE = 20;
     FormsModule,
     DatePipe,
     PageHeaderComponent,
-    SortHeaderComponent,
     CredentialRowComponent,
     EmptyStateComponent,
     LoadingBlockComponent,
@@ -51,14 +49,12 @@ export class UsersComponent implements OnInit {
   protected readonly auth = inject(AuthService);
 
   protected readonly loading = signal(true);
-  private readonly allProfiles = signal<UserProfile[]>([]);
+  // Apenas a página atual vive em memória.
   protected readonly visibleRows = signal<UserProfile[]>([]);
-  protected readonly totalFiltered = signal(0);
-  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.totalFiltered() / PAGE_SIZE)));
+  protected readonly total = signal(0);
+  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / PAGE_SIZE)));
 
-  protected readonly search = signal('');
   protected readonly page = signal(1);
-  protected readonly sort = signal<SortState>({ key: 'nome', dir: 'asc' });
   protected readonly editingId = signal<string | null>(null);
 
   protected readonly selectedUser = signal<UserProfile | null>(null);
@@ -73,6 +69,7 @@ export class UsersComponent implements OnInit {
   accessForm: CreateCredentialRequest = { userId: '', systemId: '', senha: '' };
 
   async ngOnInit(): Promise<void> {
+    // Dados de referência para dropdowns/enriquecimento continuam sendo carregados uma vez.
     const [systems, locations] = await Promise.all([
       firstValueFrom(this.systemService.findAll(1, 200)).catch(() => ({ data: [] as System[] })),
       firstValueFrom(this.locationService.findAll(1, 200)).catch(() => ({ data: [] as Location[] })),
@@ -82,12 +79,14 @@ export class UsersComponent implements OnInit {
     await this.load();
   }
 
+  /** Busca somente a página atual no servidor. */
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const result = await firstValueFrom(this.userService.findAllProfiles(1, 500));
-      this.allProfiles.set(result.data);
-      this.applyFilters();
+      const result = await firstValueFrom(this.userService.findAllProfiles(this.page(), PAGE_SIZE));
+      this.visibleRows.set(result.data);
+      // Ajuste o campo conforme o seu PaginatedResult (total / totalItems / meta.total…).
+      this.total.set(result.total ?? result.data.length);
     } catch (err) {
       this.toast.apiError('Não foi possível carregar os usuários', err);
     } finally {
@@ -95,61 +94,9 @@ export class UsersComponent implements OnInit {
     }
   }
 
-  applyFilters(): void {
-    const term = this.search().trim().toLowerCase();
-    let list = this.allProfiles();
-
-    if (term) {
-      list = list.filter(
-        (u) =>
-          u.employeeNome?.toLowerCase().includes(term) ||
-          u.userUsername?.toLowerCase().includes(term) ||
-          u.userEmail?.toLowerCase().includes(term) ||
-          String(u.employeeMatricula ?? '').includes(term),
-      );
-    }
-
-    const { key, dir } = this.sort();
-    list = [...list].sort((a, b) => {
-      const cmp = this.compareBySortKey(a, b, key);
-      return dir === 'asc' ? cmp : -cmp;
-    });
-
-    this.totalFiltered.set(list.length);
-    const start = (this.page() - 1) * PAGE_SIZE;
-    this.visibleRows.set(list.slice(start, start + PAGE_SIZE));
-  }
-
-  private compareBySortKey(a: UserProfile, b: UserProfile, key: string): number {
-    switch (key) {
-      case 'nome':
-        return (a.employeeNome ?? '').localeCompare(b.employeeNome ?? '');
-      case 'matricula':
-        return Number(a.employeeMatricula ?? 0) - Number(b.employeeMatricula ?? 0);
-      case 'usuario':
-        return (a.userUsername ?? '').localeCompare(b.userUsername ?? '');
-      case 'email':
-        return (a.userEmail ?? '').localeCompare(b.userEmail ?? '');
-      default:
-        return 0;
-    }
-  }
-
-  onSearchChange(term: string): void {
-    this.search.set(term);
-    this.page.set(1);
-    this.applyFilters();
-  }
-
-  onSort(sort: SortState): void {
-    this.sort.set(sort);
-    this.page.set(1);
-    this.applyFilters();
-  }
-
   goToPage(page: number): void {
     this.page.set(page);
-    this.applyFilters();
+    this.load();
   }
 
   startEdit(user: UserProfile): void {
@@ -188,6 +135,8 @@ export class UsersComponent implements OnInit {
 
     this.userCredentialsLoading.set(true);
     try {
+      // Sem endpoint de credenciais por usuário, ainda é preciso buscar e filtrar no cliente.
+      // Recomendado: criar um findByUser(userId) no backend e trocar esta chamada.
       const result = await firstValueFrom(this.credentialService.findAll(1, 500));
       const mine = result.data.filter((c) => c.userId === user.userId);
 

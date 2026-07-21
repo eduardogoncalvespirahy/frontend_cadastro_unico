@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import { CredentialService } from '../../core/services/credential.service';
 import { CredentialRoleService } from '../../core/services/credential-role.service';
 import { CredentialLocationService } from '../../core/services/credential-location.service';
@@ -10,8 +10,12 @@ import { SystemService } from '../../core/services/system.service';
 import { LocationService } from '../../core/services/location.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
-import { Credential, CreateCredentialRequest, CredentialView } from '../../core/models/credential.model';
-import { UserProfile } from '../../core/models/user.model';
+import {
+  Credential,
+  CreateCredentialRequest,
+  CredentialView,
+} from '../../core/models/credential.model';
+import { UserProfile } from '../../core/models/user-profile.model';
 import { System } from '../../core/models/system.model';
 import { Location } from '../../core/models/location.model';
 import { SortState } from '../../core/models/sort.model';
@@ -23,6 +27,14 @@ import { LoadingBlockComponent } from '../../shared/components/loading-block/loa
 import { PaginationComponent } from '../../shared/components/pagination/pagination.component';
 
 const PAGE_SIZE = 20;
+// Tamanho de página usado para varrer listas completas (o backend só pagina, não filtra).
+const FETCH_PAGE_SIZE = 200;
+
+/** Estrutura mínima de uma resposta paginada, usada pelo fetchAll genérico. */
+interface Paginated<T> {
+  data: T[];
+  total?: number | null;
+}
 
 @Component({
   selector: 'app-credentials',
@@ -70,7 +82,14 @@ export class CredentialsComponent implements OnInit {
   protected readonly visibleRows = signal<CredentialView[]>([]);
   protected readonly totalFiltered = signal(0);
 
-  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.totalFiltered() / PAGE_SIZE)));
+  protected readonly totalPages = computed(() =>
+    Math.max(1, Math.ceil(this.totalFiltered() / PAGE_SIZE)),
+  );
+
+  // Filtros de página (o filtro por usuário vem da rota e tem UI própria).
+  protected readonly hasActiveFilters = computed(
+    () => this.search().trim() !== '' || this.filterSystemId() !== '' || this.filterStatus() !== '',
+  );
 
   form: CreateCredentialRequest = { userId: '', systemId: '', senha: '' };
 
@@ -79,31 +98,48 @@ export class CredentialsComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     const [users, systems, locations] = await Promise.all([
-      firstValueFrom(this.userService.findAllProfiles(1, 500)).catch(() => ({ data: [] as UserProfile[] })),
+      this.fetchAll((p, l) => this.userService.findAllProfiles(p, l)).catch(() => [] as UserProfile[]),
       firstValueFrom(this.systemService.findAll(1, 200)).catch(() => ({ data: [] as System[] })),
-      firstValueFrom(this.locationService.findAll(1, 200)).catch(() => ({ data: [] as Location[] })),
+      firstValueFrom(this.locationService.findAll(1, 200)).catch(() => ({
+        data: [] as Location[],
+      })),
     ]);
 
-    this.users.set(users.data);
+    this.users.set(users);
     this.systems.set(systems.data);
     this.allLocations.set(locations.data);
-    this.usersById = new Map(users.data.map((u) => [u.userId, u]));
+    this.usersById = new Map(users.map((u) => [u.userId, u]));
     this.systemsById = new Map(systems.data.map((s) => [s.id, s]));
 
     this.route.queryParamMap.subscribe((params) => {
       const userId = params.get('userId') ?? '';
       this.filterUserId.set(userId);
-      this.filterUserNome.set(userId ? this.usersById.get(userId)?.employeeNome ?? null : null);
+      this.filterUserNome.set(userId ? (this.usersById.get(userId)?.employeeNome ?? null) : null);
       this.page.set(1);
       this.reload();
     });
   }
 
+  /** Varre todas as páginas de um endpoint paginado (page/limit) e junta o resultado. */
+  private async fetchAll<T>(
+    fetchPage: (page: number, limit: number) => Observable<Paginated<T>>,
+  ): Promise<T[]> {
+    const first = await firstValueFrom(fetchPage(1, FETCH_PAGE_SIZE));
+    // Ajuste o campo conforme o seu PaginatedResult (total / totalItems / meta.total…).
+    const total = first.total ?? first.data.length;
+    const all = [...first.data];
+    const pages = Math.ceil(total / FETCH_PAGE_SIZE);
+    for (let p = 2; p <= pages; p++) {
+      const next = await firstValueFrom(fetchPage(p, FETCH_PAGE_SIZE));
+      all.push(...next.data);
+    }
+    return all;
+  }
+
   async reload(): Promise<void> {
     this.loading.set(true);
     try {
-      const result = await firstValueFrom(this.credentialService.findAll(1, 500));
-      this.rawCredentials.set(result.data);
+      this.rawCredentials.set(await this.fetchAll((p, l) => this.credentialService.findAll(p, l)));
       await this.applyFilters();
     } catch (err) {
       this.toast.apiError('Não foi possível carregar as credenciais', err);
@@ -154,6 +190,10 @@ export class CredentialsComponent implements OnInit {
 
     this.totalFiltered.set(list.length);
 
+    // Reposiciona a página caso o filtro reduza o total abaixo da página atual.
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    if (this.page() > pages) this.page.set(pages);
+
     const start = (this.page() - 1) * PAGE_SIZE;
     const pageSlice = list.slice(start, start + PAGE_SIZE);
 
@@ -168,8 +208,12 @@ export class CredentialsComponent implements OnInit {
       const enriched = await Promise.all(
         slice.map(async (c) => {
           const [roles, locations] = await Promise.all([
-            firstValueFrom(this.credentialRoleService.findRoleNamesByCredential(c.id)).catch(() => []),
-            firstValueFrom(this.credentialLocationService.findLocationNamesByCredential(c.id)).catch(() => []),
+            firstValueFrom(this.credentialRoleService.findRoleNamesByCredential(c.id)).catch(
+              () => [],
+            ),
+            firstValueFrom(
+              this.credentialLocationService.findLocationNamesByCredential(c.id),
+            ).catch(() => []),
           ]);
           return { ...c, roles, locations };
         }),
@@ -207,6 +251,14 @@ export class CredentialsComponent implements OnInit {
 
   goToPage(page: number): void {
     this.page.set(page);
+    this.applyFilters();
+  }
+
+  clearFilters(): void {
+    this.search.set('');
+    this.filterSystemId.set('');
+    this.filterStatus.set('');
+    this.page.set(1);
     this.applyFilters();
   }
 

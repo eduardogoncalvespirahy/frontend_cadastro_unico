@@ -2,7 +2,7 @@
   title="Sistemas"
   subtitle="Sistemas cadastrados que podem receber credenciais e papéis. Clique num sistema para ver e gerenciar os papéis dele."
 >
-  @if (auth.can('ADMIN')) {
+  @if (auth.hasAnyRole('ADMIN')) {
     <button class="btn btn-primary btn-sm" (click)="openForm()"><i class="bi bi-plus-lg"></i> Novo sistema</button>
   }
 </app-page-header>
@@ -30,6 +30,38 @@
   </div>
 }
 
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div style="flex: 1 1 280px; min-width: 260px;">
+    <label class="form-label small text-muted mb-1">Buscar</label>
+    <div class="input-group">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input
+        class="form-control"
+        placeholder="Nome, descrição ou URL"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+      />
+    </div>
+  </div>
+
+  <div style="min-width: 150px;">
+    <label class="form-label small text-muted mb-1">Status</label>
+    <select class="form-select" [ngModel]="statusFilter()" (ngModelChange)="onStatusChange($event)">
+      <option value="all">Todos</option>
+      <option value="1">Ativo</option>
+      <option value="0">Inativo</option>
+    </select>
+  </div>
+
+  @if (hasActiveFilters()) {
+    <div>
+      <button class="btn btn-outline-secondary" (click)="clearFilters()">
+        <i class="bi bi-x-lg"></i> Limpar filtros
+      </button>
+    </div>
+  }
+</div>
+
 @if (loading()) {
   <app-loading-block label="Carregando sistemas…" />
 } @else {
@@ -46,7 +78,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (system of systems(); track system.id) {
+          @for (system of visibleRows(); track system.id) {
             <tr class="cursor-pointer" (click)="toggleExpand(system.id)">
               <td>
                 <i class="bi me-2" [class.bi-chevron-right]="expandedSystemId() !== system.id" [class.bi-chevron-down]="expandedSystemId() === system.id"></i>
@@ -64,7 +96,7 @@
                 </span>
               </td>
               <td (click)="$event.stopPropagation()" class="text-end">
-                @if (auth.can('ADMIN')) {
+                @if (auth.hasAnyRole('ADMIN')) {
                   <button class="btn btn-sm btn-outline-secondary me-1" (click)="toggleStatus(system)">
                     {{ system.status === 1 ? 'Desativar' : 'Ativar' }}
                   </button>
@@ -82,10 +114,13 @@
             }
           }
 
-          @if (systems().length === 0) {
+          @if (visibleRows().length === 0) {
             <tr>
               <td colspan="5">
-                <app-empty-state icon="bi-hdd-network" message="Nenhum sistema cadastrado ainda." />
+                <app-empty-state
+                  icon="bi-hdd-network"
+                  [message]="hasActiveFilters() ? 'Nenhum sistema encontrado.' : 'Nenhum sistema cadastrado ainda.'"
+                />
               </td>
             </tr>
           }
@@ -93,4 +128,6 @@
       </table>
     </div>
   </div>
+
+  <app-pagination [page]="page()" [totalPages]="totalPages()" [total]="total()" (pageChange)="goToPage($event)" />
 }

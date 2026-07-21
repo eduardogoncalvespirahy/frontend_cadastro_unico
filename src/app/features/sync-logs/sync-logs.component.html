@@ -38,7 +38,7 @@
               <td>{{ log.updated }}</td>
               <td>{{ log.removed }}</td>
               <td class="text-end">
-                @if (auth.can('ADMIN')) {
+                @if (auth.hasAnyRole('ADMIN')) {
                   <button class="btn btn-sm btn-outline-danger" (click)="remove(log)"><i class="bi bi-trash"></i></button>
                 }
               </td>
