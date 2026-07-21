@@ -42,3 +42,6 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Endereço de teste
+/src/environments/app-config.ts
