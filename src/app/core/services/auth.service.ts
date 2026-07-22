@@ -347,7 +347,10 @@ export class AuthService {
       path: '/',
       sameSite: 'Strict',
       secure: location.protocol === 'https:',
-      maxAge: 3600000,
+      // max-age do cookie é em SEGUNDOS. Acompanha o refresh token do
+      // servidor (7 dias) — se fosse mais curto, o app pareceria "deslogado"
+      // localmente antes do refresh token do backend de fato expirar.
+      maxAge: 60 * 60 * 24 * 7,
     });
   }
 

@@ -4,7 +4,7 @@ import { Observable, map, of } from 'rxjs';
 
 import { AuthService } from '../services/auth.service';
 
-const FORBIDDEN_REDIRECT = '/';
+const FORBIDDEN_REDIRECT = '/acesso-negado';
 const LOGIN_REDIRECT = '/login';
 
 type GuardResult = boolean | UrlTree;
